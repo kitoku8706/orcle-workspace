@@ -452,15 +452,337 @@ WHERE department_name LIKE '%IT%'
 --사원이름, 급여, 입사일을 출력하시오. (ALL)
 --(서브쿼리에서 max()함수를 사용하지 않는다);
 
-SELECT
-FROM
-WHERE
+SELECT salary
+FROM employees
+WHERE department_id='30';
 
 
-SELECT 
-FROM
-WHERE     (
-    SELECT
-    FROM
-    WHERE
+SELECT first_name, salary, hire_date
+FROM employees
+WHERE salary >ALL(
+   SELECT salary
+FROM employees
+WHERE department_id='30'
+);
+
+
+--30소속된 사원들이 받은 급여보다  높은 급여를 받는 
+--사원이름, 급여, 입사일을 출력하시오. (ANY)
+--(서브쿼리에서 min()함수를 사용하지 않는다);
+
+SELECT first_name, salary, hire_date
+FROM employees
+WHERE salary >ANY(
+   SELECT salary
+FROM employees
+WHERE department_id='30'
 )
+AND department_id !=30;
+
+
+  --Toronto 도시에 근무하는 사원들이 받는 최소급여보다 많이 받는  사원의
+--first_name, city, salary을 출력하시오(ANY)
+--Toronto은 제외한다. 
+SELECT e.first_name, l.city, e.salary
+FROM employees e, departments d, locations l
+WHERE e.department_id=d.department_id
+     AND   d.location_id=l.location_id
+     AND e.salary  >ANY  (
+                                            SELECT e.salary
+                                            FROM employees e, departments d, locations l
+                                            WHERE e.department_id=d.department_id
+                                            AND   d.location_id=l.location_id
+                                            AND l.city='Toronto'
+                                           )
+     AND l.city <> 'Toronto';
+
+/*-----------------------------------------------------
+ 상관관계 서브쿼리
+ : 서브쿼리에서 메인쿼리의 컬럼을 참조한다.(메인쿼리를 먼저수행한다.)
+   서브쿼리는 메인쿼리 각각의 행에 대해서 순서적으로 한번씩 실행한다.
+ <아래 쿼리 처리순서>
+ 1st : 바깥쪽 쿼리의 첫째 row에 대하여 
+ 2nd : 안쪽 쿼리에서 자신의 속해있는 부서의 MAX salary과
+       비교하여 true 이면 바깥의 컬럼값을 반환하고 , 
+       false 이면 값을 버린다. 
+ 3rd : 바깥쪽 쿼리의 두 번째 row에 대하여 마찬가지로 실행하며, 
+       이렇게 바깥쪽 쿼리의 마지막 row까지 실행한다. 
+	   
+https://www.w3resource.com/sql/subqueries/correlated-subqueries-using-aliases.php	   
+----------------------------------------------------*/
+
+-- 사언이 있는 부서만 출력하시오.
+SELECT department_id, department_name
+FROM departments
+
+-- 비상관 서브쿼리 서브쿼리에서 메인쿼리의 컬럼을 참조하지않음
+SELECT department_id, department_name
+FROM departments
+WHERE department_id IN(
+    SELECT department_id
+    FROM employees
+    WHERE department_id IS NOT NULL
+    GROUP BY department_id
+);
+
+
+-- 상관관계서브쿼리 : 서브쿼리에서 메인쿼리의 컬럼을 참조함
+/*6*/SELECT department_id, department_name
+/*1*/FROM departments d
+/*5*/WHERE EXISTS(
+/*4*/    SELECT department_id
+   /*2*/ FROM employees
+    /*3*/WHERE department_id = d.department_id
+)
+/*7*/ ORDER BY department_id;
+
+-- EXISTS 서브쿼리 작동방식
+     ①EXISTS는 서브쿼리 결과가 1행이라도 존재하는지만 체크합니다.
+     ②실제 반환값(여기선 SELECT 1)은 중요하지 않습니다.
+     ③ 성능상 이점도 있음 → 조건을 만족하는 첫 번째 행을 찾는 즉시 종료
+  SELECT department_id, department_name
+  FROM departments d
+   WHERE  EXISTS (
+                                    SELECT 1
+                                    FROM employees
+                                    WHERE department_id   = d.department_id                                      
+                                      )
+   ORDER BY department_id;     
+ 
+ /*
+ 1. FROM departments d
+    |
+   ↓
+2. 각 부서 d에 대해 다음 서브쿼리 실행:
+     EXISTS (
+        SELECT 1
+        FROM employees e
+        WHERE e.department_id = d.department_id
+     )
+   → 부서에 속한 직원이 있으면 TRUE
+    |
+   ↓
+3. WHERE 절을 만족하는 부서만 남김
+    |
+   ↓
+4. SELECT department_id, department_name 출력
+    |
+   ↓
+5.  ORDER BY department_id;   출력
+ */
+
+--부서가 있는 사원의 정보를 출력하시오
+SELECT employee_id, first_name, department_id
+FROM employees e
+WHERE EXISTS (
+SELECT 1
+FROM DEPARTMENTS
+WHERE DEPARTMENT_ID=E.department_id
+);
+
+--관리자가 있는 사원의 정보를 출력하시오
+SELECT employee_id, first_name, department_id
+FROM employees W
+WHERE EXISTS (
+        SELECT 1
+        FROM employees m
+        WHERE m.employee_id = w.manager_id
+        );
+
+SELECT employee_id, first_name, department_id
+FROM employees W
+WHERE NOT EXISTS (
+        SELECT 1
+        FROM employees m
+        WHERE m.employee_id = w.manager_id
+        );
+
+
+
+/*=========================================================
+Top-N 서브쿼리
+   상위의 값을 추출할때 사용된다.
+   <, <=연산자를 사용할수 있다. 단 비교되는 값이 1일때는 =도 가능하다.
+   order by절을 사용할 수 있다.
+=========================================================*/
+
+--급여가 가장 높은 상위 3명을 검색하시오.
+SELECT rownum, emp.first_name, emp.salary
+FROM  (
+    SELECT first_name,salary
+    FROM employees
+    ORDER BY salary DESC
+)emp
+WHERE rownum<=3;
+
+
+SELECT trow.*
+FROM (
+    SELECT rownum AS rm, emp.*
+    FROM(
+        SELECT first_name,salary
+        FROM employees
+        ORDER BY salary DESC
+        )emp
+        )trow
+        WHERE trow.rm>=4 AND trow.rm<=8;
+        
+--월 별 입사자 수를 조회하되 입사자수가 가장 많은 상위 3개만 출력되도록 하시오.
+--  <출력:   월     입사자수 >
+
+SELECT emp.*
+FROM (
+SELECT to_char(hire_date,'mm'),count(*)        
+FROM employees     
+GROUP BY to_char(hire_date,'mm')
+ORDER BY count(*) DESC          
+ )emp
+ where rownum<=3;
+ 
+ /*-----------------------------------------------------------
+       문제
+ -------------------------------------------------------------*/
+--1) department_id가 60인 부서의 도시명을 알아내는 SELECT문장을 기술하시오
+SELECT d.location_id,l.city
+FROM departments d, locations l
+WHERE l.location_id = d.location_id
+AND d.department_id='60';
+
+    
+--2)사번이 107인 사원과 부서가같고,167번의 급여보다 많은 사원들의 사번,이름(first_name),급여를 출력하시오.
+   SELECT employee_id, first_name, salary
+   FROM employees
+   WHERE department_id=(
+    SELECT department_id
+    FROM employees
+    WHERE employee_id = 107)
+    AND salary>(
+    SELECT salary
+    FROM employees
+    WHERE employee_id =167);
+    
+                  
+--3) 급여평균보다 급여를 적게받는 사원들중 커미션을 받는 사원들의 사번,이름(first_name),급여,커미션 퍼센트를 출력하시오.
+    SELECT employee_id, first_name, salary, commission_pct
+    FROM employees 
+    WHERE salary < (
+   SELECT avg(salary)
+   FROM employees
+   ) AND commission_pct IS NOT NULL;
+   
+    
+--4)각 부서의 최소급여가 20번 부서의 최소급여보다 많은 부서의 번호와 그부서의 최소급여를 출력하시오.
+ SELECT department_id, min(salary)
+ FROM employees
+ GROUP BY department_id
+ HAVING min(salary)>(
+ SELECT min(salary)
+ FROM employees
+ GROUP BY department_id
+ HAVING department_id = 20
+ );
+    
+--5) 사원번호가 177인 사원과 담당 업무가 같은 사원의 사원이름(first_name)과 담당업무(job_id)하시오.   
+SELECT first_name, job_id
+FROM employees
+WHERE job_id =(
+    SELECT job_id
+    FROM employees
+    WHERE employee_id='177');
+     
+--6) 최소 급여를 받는 사원의 이름(first_name), 담당 업무(job_id) 및 급여(salary)를 표시하시오(그룹함수 사용).
+SELECT first_name, job_id, salary
+FROM employees
+WHERE salary = (SELECT min(salary)
+                FROM employees);
+
+				
+--7)업무별 평균 급여가 가장 적은  업무(job_id)를 찾아 업무(job_id)와 평균 급여를 표시하시오.
+SELECT job_id, avg(salary)
+FROM employees
+GROUP BY job_id
+HAVING avg(salary) = (SELECT min(avg(salary))
+                      FROM employees
+                      GROUP BY job_id);
+
+
+					  
+--8) 각 부서의 최소 급여를 받는 사원의 이름(first_name), 급여(salary), 부서번호(department_id)를 표시하시오.
+SELECT first_name, salary, department_id
+FROM employees
+WHERE (department_id, salary) IN (SELECT department_id, min(salary)
+                                  FROM employees
+                                  GROUP BY department_id)
+ORDER BY department_id;
+
+
+SELECT first_name, salary, department_id
+FROM employees e1
+WHERE  salary = (SELECT  min(salary)
+                 FROM employees e2
+                 WHERE e1.department_id=e2.department_id)
+ORDER BY department_id;
+
+
+--9)담당 업무가 프로그래머(IT_PROG)인 모든 사원보다 급여가 적으면서 
+--업무가 프로그래머(IT_PROG)가 아닌  사원들의 사원번호(employee_id), 이름(first_name), 
+--담당 업무(job_id), 급여(salary))를 출력하시오.
+  SELECT employee_id, first_name, job_id, salary
+FROM employees
+WHERE salary <ALL (SELECT salary
+                   FROM employees
+                   WHERE job_id = 'IT_PROG')
+ AND job_id <> 'IT_PROG';                  
+         
+
+--10)부하직원이 없는 모든 사원의 이름을 표시하시오.
+SELECT employee_id, first_name
+FROM employees
+WHERE employee_id NOT IN (SELECT e.employee_id
+                          FROM employees e, employees m
+                          WHERE e.employee_id=m.manager_id)
+ORDER BY employee_id;
+
+
+SELECT employee_id, first_name
+FROM employees e
+WHERE NOT EXISTS (SELECT employee_id
+                  FROM employees m
+                  WHERE m.manager_id = e.employee_id)
+ORDER BY employee_id;
+
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
